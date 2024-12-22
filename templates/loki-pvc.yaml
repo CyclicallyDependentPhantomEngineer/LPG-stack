@@ -1,39 +1,20 @@
+{{- if .Values.loki.persistence.enabled }}
+{{- range .Values.loki.persistence.pvcs }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: loki-chunks-pvc
-  namespace: logging
+  name: {{ .name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ $.Release.Name }}
 spec:
-  storageClassName: longhorn
+  storageClassName: {{ .storageClassName }}
   accessModes:
-    - ReadWriteOnce
+    {{- toYaml .accessModes | nindent 4 }}
   resources:
     requests:
-      storage: 5Gi
+      storage: {{ .storage }}
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: loki-index-pvc
-  namespace: logging
-spec:
-  storageClassName: longhorn
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: loki-cache-pvc
-  namespace: logging
-spec:
-  storageClassName: longhorn
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
+{{- end }}
+{{- end }}
 

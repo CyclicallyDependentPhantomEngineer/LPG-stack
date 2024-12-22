@@ -1,44 +1,21 @@
+{{- if .Values.loki.persistence.enabled }}
+{{- range .Values.loki.persistence.pvs }}
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: loki-chunks-pv
+  name: {{ .name }}
+  labels:
+    app: {{ $.Release.Name }}
 spec:
-  storageClassName: longhorn
+  storageClassName: {{ .storageClassName }}
   capacity:
-    storage: 5Gi
-  volumeMode: Filesystem
+    storage: {{ .storage }}
+  volumeMode: {{ .volumeMode | default "Filesystem" }}
   accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
+    {{- toYaml .accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: {{ .reclaimPolicy | default "Retain" }}
   hostPath:
-    path: /var/loki/chunks
+    path: {{ .path }}
 ---
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: loki-index-pv
-spec:
-  storageClassName: longhorn
-  capacity:
-    storage: 5Gi
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  hostPath:
-    path: /var/loki/index
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: loki-cache-pv
-spec:
-  storageClassName: longhorn
-  volumeMode: Filesystem
-  capacity:
-    storage: 5Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  hostPath:
-    path: /var/loki/cache
+{{- end }}
+{{- end }}

@@ -1,15 +1,47 @@
 loki:
-  enabled: true
   persistence:
     enabled: true
-    # Use Longhorn StorageClass for Loki's data
-    storageClassName: longhorn
-    chunks:
-      size: 5Gi
-    index:
-      size: 5Gi
-    cache:
-      size: 5Gi
+    pvs:
+      - name: loki-chunks-pv
+        storageClassName: longhorn
+        storage: 5Gi
+        volumeMode: Filesystem
+        accessModes:
+          - ReadWriteOnce
+        reclaimPolicy: Retain
+        path: /var/loki/chunks
+      - name: loki-index-pv
+        storageClassName: longhorn
+        storage: 5Gi
+        volumeMode: Filesystem
+        accessModes:
+          - ReadWriteOnce
+        reclaimPolicy: Retain
+        path: /var/loki/index
+      - name: loki-cache-pv
+        storageClassName: longhorn
+        storage: 5Gi
+        volumeMode: Filesystem
+        accessModes:
+          - ReadWriteOnce
+        reclaimPolicy: Retain
+        path: /var/loki/cache
+    pvcs:
+      - name: loki-chunks-pvc
+        storageClassName: longhorn
+        accessModes:
+          - ReadWriteOnce
+        storage: 5Gi
+      - name: loki-index-pvc
+        storageClassName: longhorn
+        accessModes:
+          - ReadWriteOnce
+        storage: 5Gi
+      - name: loki-cache-pvc
+        storageClassName: longhorn
+        accessModes:
+          - ReadWriteOnce
+        storage: 5Gi
 
   config:
     auth_enabled: false
