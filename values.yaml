@@ -89,27 +89,214 @@ loki:
 
 promtail:
   enabled: true
+  debug: false
+  persistence:
+    enabled: true
+    pvName: promtail-pv
+    pvcName: promtail-pvc
+    storageClassName: longhorn
+    storage: 1Gi
+    accessModes:
+      - ReadWriteOnce
+    reclaimPolicy: Retain
+    path: /data/promtail
+    volumeMode: Filesystem
+
   config:
+    enabled: true
+    logLevel: info
+    logFormat: logfmt
+    serverPort: 3101
+
     clients:
       - url: http://loki:3100/loki/api/v1/push
     positions:
-      filename: /var/log/promtail/positions.yaml # Note: This will be an ephemeral location (in-memory storage)
-    scrape_configs:
-      - job_name: kubernetes-pods
-        kubernetes_sd_configs:
-          - role: pod
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_label_app]
-            action: keep
-            regex: .+
-        pipeline_stages:
-          - docker: {}
-        static_configs:
-          - targets:
-              - localhost
-            labels:
-              job: varlogs
-              __path__: /var/log/pods/*/*.log
+      filename: /run/promtail/positions.yaml
+
+    enableTracing: false
+    snippets:
+      pipelineStages:
+        - cri: {}
+        - json:
+            expressions:
+              timestamp: time
+              level: log_level
+
+        - labels:
+            log_level: "log_level"
+
+        - drop:
+            expression: "^.*(?P<log_level>(warn|Warn|WARN|warning|Warning|WARNING)).*$"
+
+        - drop:
+            expression: "^.*(?P<log_level>(debug|Debug|DEBUG)).*$"
+
+        - match:
+            selector: '{job="kubernetes-pods"}'
+            stages:
+              - regex:
+                  expression: ".*(?P<log_level>(info|Info|INFO)).*"
+              - labels:
+                  log_level: info
+
+        - match:
+            selector: '{job="kubernetes-pods"}'
+            stages:
+              - regex:
+                  expression: ".*(?P<log_level>(error|Error|ERROR)).*"
+              - labels:
+                  log_level: error
+
+      pipelineStagesDebug:
+        - cri: {}
+        - json:
+            expressions:
+              level: log_level
+
+        - drop:
+            expression: "^.*(?P<log_level>(warn|Warn|WARN|warning|Warning|WARNING)).*$"
+
+        - match:
+            selector: '{job="kubernetes-pods"}'
+            stages:
+              - regex:
+                  expression: ".*(?P<log_level>(info|Info|INFO)).*"
+              - labels:
+                  log_level: info
+        - match:
+            selector: '{job="kubernetes-pods"}'
+            stages:
+              - regex:
+                  expression: ".*(?P<log_level>(error|Error|ERROR)).*"
+              - labels:
+                  log_level: error
+
+        - match:
+            selector: '{job="kubernetes-pods"}'
+            stages:
+              - regex:
+                  expression: ".*(?P<log_level>(debug|Debug|DEBUG)).*"
+              - labels:
+                  log_level: debug
+
+      common:
+        - action: replace
+          source_labels:
+            - __meta_kubernetes_pod_node_name
+          target_label: node_name
+        - action: replace
+          source_labels:
+            - __meta_kubernetes_namespace
+          target_label: namespace
+        - action: replace
+          replacement: $1
+          separator: /
+          source_labels:
+            - namespace
+            - app
+          target_label: job
+        - action: replace
+          source_labels:
+            - __meta_kubernetes_pod_name
+          target_label: pod
+        - action: replace
+          source_labels:
+            - __meta_kubernetes_pod_container_name
+          target_label: container
+        - action: replace
+          replacement: /var/log/pods/*$1/*.log
+          separator: /
+          source_labels:
+            - __meta_kubernetes_pod_uid
+            - __meta_kubernetes_pod_container_name
+          target_label: __path__
+        - action: replace
+          replacement: /var/log/pods/*$1/*.log
+          regex: true/(.*)
+          separator: /
+          source_labels:
+            - __meta_kubernetes_pod_annotationpresent_kubernetes_io_config_hash
+            - __meta_kubernetes_pod_annotation_kubernetes_io_config_hash
+            - __meta_kubernetes_pod_container_name
+          target_label: __path__
+
+      # If set to true, adds an additional label for the scrape job.
+      # This helps debug the Promtail config.
+      addScrapeJobLabel: false
+
+      scrapeConfigs: |
+        - job_name: kubernetes-pods
+
+        {{- if .Values.debug }}
+          pipeline_stages:
+            {{- toYaml .Values.config.snippets.pipelineStagesDebug | nindent 4 }}
+        {{- else}}
+          pipeline_stages:
+            {{- toYaml .Values.config.snippets.pipelineStages | nindent 4 }}
+        {{- end}}
+
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels:
+                - __meta_kubernetes_pod_controller_name
+              regex: ([0-9a-z-.]+?)(-[0-9a-f]{8,10})?
+              action: replace
+              target_label: __tmp_controller_name
+            - source_labels:
+                - __meta_kubernetes_pod_label_app_kubernetes_io_name
+                - __meta_kubernetes_pod_label_app
+                - __tmp_controller_name
+                - __meta_kubernetes_pod_name
+              regex: ^;*([^;]+)(;.*)?$
+              action: replace
+              target_label: app
+            - source_labels:
+                - __meta_kubernetes_pod_label_app_kubernetes_io_instance
+                - __meta_kubernetes_pod_label_instance
+              regex: ^;*([^;]+)(;.*)?$
+              action: replace
+              target_label: instance
+            - source_labels:
+                - __meta_kubernetes_pod_label_app_kubernetes_io_component
+                - __meta_kubernetes_pod_label_component
+              regex: ^;*([^;]+)(;.*)?$
+              action: replace
+              target_label: component
+            {{- if .Values.config.snippets.addScrapeJobLabel }}
+            - replacement: kubernetes-pods
+              target_label: scrape_job
+            {{- end }}
+            {{- toYaml .Values.config.snippets.common | nindent 4 }}
+            {{- with .Values.config.snippets.extraRelabelConfigs }}
+            {{- toYaml . | nindent 4 }}
+            {{- end }}
+
+    file: |
+      server:
+        log_level: {{ .Values.config.logLevel }}
+        log_format: {{ .Values.config.logFormat }}
+        http_listen_port: {{ .Values.config.serverPort }}
+        {{- with .Values.httpPathPrefix }}
+        http_path_prefix: {{ . }}
+        {{- end }}
+        {{- tpl .Values.config.snippets.extraServerConfigs . | nindent 2 }}
+
+      clients:
+        {{- tpl (toYaml .Values.config.clients) . | nindent 2 }}
+
+      positions:
+        {{- tpl (toYaml .Values.config.positions) . | nindent 2 }}
+
+      scrape_configs:
+        {{- tpl .Values.config.snippets.scrapeConfigs . | nindent 2 }}
+        {{- tpl .Values.config.snippets.extraScrapeConfigs . | nindent 2 }}
+
+      limits_config:
+        {{- tpl .Values.config.snippets.extraLimitsConfig . | nindent 2 }}
+
+      tracing:
+        enabled: {{ .Values.config.enableTracing }}
 
 grafana:
   enabled: true

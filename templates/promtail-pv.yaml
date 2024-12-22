@@ -1,0 +1,18 @@
+{{- if .Values.promtail.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.promtail.persistence.pvName }}
+  labels:
+    app: {{ $.Release.Name }}
+spec:
+  storageClassName: {{ .Values.promtail.persistence.storageClassName }}
+  capacity:
+    storage: {{ .Values.promtail.persistence.storage }}
+  volumeMode: {{ .Values.promtail.persistence.volumeMode | default "Filesystem" }}
+  accessModes:
+    {{- toYaml .Values.promtail.persistence.accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: {{ .Values.promtail.persistence.reclaimPolicy | default "Retain" }}
+  hostPath:
+    path: {{ .Values.promtail.persistence.path }}
+{{- end }}

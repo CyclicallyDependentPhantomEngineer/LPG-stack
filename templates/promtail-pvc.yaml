@@ -1,0 +1,16 @@
+{{- if .Values.promtail.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.promtail.persistence.pvcName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ $.Release.Name }}
+spec:
+  storageClassName: {{ .Values.promtail.persistence.storageClassName }}
+  accessModes:
+    {{- toYaml .Values.promtail.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.promtail.persistence.storage }}
+{{- end }}
