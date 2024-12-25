@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.loki.fullnameOverride | default (printf "%s-loki" .Release.Name) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: loki
+    release: {{ .Release.Name }}
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: OrderedReady
+  replicas: {{ .Values.loki.replicaCount | default 1 }}
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: loki
+      release: {{ .Release.Name }}
+  serviceName: loki-headless
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: http-metrics
+        prometheus.io/scrape: "true"
+      labels:
+        app: loki
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: loki
+          image: "{{ .Values.loki.image.repository }}:{{ .Values.loki.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          args:
+            - -config.file=/etc/loki/loki.yaml
+          ports:
+            - containerPort: 3100
+              name: http-metrics
+              protocol: TCP
+            - containerPort: 9095
+              name: grpc
+              protocol: TCP
+            - containerPort: 7946
+              name: memberlist-port
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.loki.persistence.enabled }}
+            {{- range .Values.loki.persistence.pvcs }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+            {{- end }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+            failureThreshold: 3
+      volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: loki
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.loki.persistence.enabled }}
+        {{- range .Values.loki.persistence.pvcs }}
+        - name: {{ .name }}
+          persistentVolumeClaim:
+            claimName: {{ .name }}
+        {{- end }}
+        {{- end }}
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        creationTimestamp: null
+        name: storage
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+      storageClassName: longhorn
+      volumeMode: Filesystem

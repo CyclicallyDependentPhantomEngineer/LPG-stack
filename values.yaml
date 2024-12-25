@@ -2,6 +2,10 @@ loki:
   enabled: true
   nameOverride: "loki"
   fullnameOverride: "loki"
+  replicaCount: 1
+  image:
+    repository: grafana/loki
+    tag: 2.6.1
   service:
     type: NodePort
     port: 3100
@@ -38,16 +42,19 @@ loki:
         accessModes:
           - ReadWriteOnce
         storage: 5Gi
+        mountPath: /var/loki/chunks
       - name: loki-index-pvc
         storageClassName: longhorn
         accessModes:
           - ReadWriteOnce
         storage: 5Gi
+        mountPath: /var/loki/index
       - name: loki-cache-pvc
         storageClassName: longhorn
         accessModes:
           - ReadWriteOnce
         storage: 5Gi
+        mountPath: /var/loki/cache
 
   config:
     auth_enabled: false
